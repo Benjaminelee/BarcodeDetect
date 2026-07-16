@@ -4,4 +4,10 @@
 # 批量过滤所有第三方库的build与嵌套.git
 /third_party/*/build*/
 /third_party/*/.git*
+
+# 屏蔽大型文件 资源文件
+/third_party/
+/install_win64/
+/HIKVIsion/
+/RGBVison/
 /*.zip
