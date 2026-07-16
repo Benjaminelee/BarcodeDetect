@@ -1,0 +1,15 @@
+{
+  "fisheye_calib_path": "fisheye_calib.xml",
+  "tagTypeStr": "APRIL_TAG",
+  "dictId": 0,
+  "arucoDictStr": "ARUCO_MIP_36h12",
+  "aprilFamilyStr": "TAG_36H11",
+  "tagSize": 0.02255,
+  "boardRows": 4,
+  "boardCols": 5,
+  "tagDistX": 0.0451,
+  "tagDistY": 0.0451,
+  "arucoModStart": 0,
+  "arucoTagStart": 0,
+  "aprilTagStart": 560
+}

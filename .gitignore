@@ -1,0 +1,7 @@
+# 全局构建目录
+**/build*/
+
+# 批量过滤所有第三方库的build与嵌套.git
+/third_party/*/build*/
+/third_party/*/.git*
+/*.zip
