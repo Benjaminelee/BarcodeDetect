@@ -19,8 +19,8 @@ constexpr double TAG_ERR_H = 0.012;             // Tag误差文字离地高度
 constexpr int    SPIN_DELAY_MS = 1;             // 刷新延时(不变)
 constexpr int    BUF_MAX = 64;                  // 缓冲区(不变)
 
-VizBoardViewer::VizBoardViewer(double tag_size, const cv::Mat& K, const cv::Size& img_size, int rows, int cols)
-    : m_tag_size(tag_size), m_viz_win("Tag阵列全局3D视图"), m_rows(rows), m_cols(cols) {
+VizBoardViewer::VizBoardViewer(double tag_size, const cv::Mat& K, const cv::Size& img_size, int rows, int cols, bool mltiArray)
+    : m_multi_array(mltiArray), m_tag_size(tag_size), m_viz_win("Tag阵列全局3D视图"), m_rows(rows), m_cols(cols) {
     // 入参校验
     if (tag_size <= 0)
         throw std::invalid_argument("tag_size must > 0");
@@ -71,15 +71,29 @@ void VizBoardViewer::initStaticScene(const cv::Mat& K, const cv::Size& img_size)
     world_axis.setRenderingProperty(cv::viz::LINE_WIDTH, WORLD_AXIS_WIDTH);
     m_viz_win.showWidget("world_axis", world_axis);
     // 2. 标定板平面
-    cv::viz::WPlane board_plane(cv::Size2d(m_tag_size * m_cols * 2, m_tag_size * m_rows * 2), cv::viz::Color::gray());
-    // 设置半透明，取值范围 0.0(完全透明) ~ 1.0(完全不透明)
-    board_plane.setRenderingProperty(cv::viz::OPACITY, 0.3);
-    m_viz_win.showWidget("board_plane", board_plane);
+    if (m_multi_array) {
+        cv::viz::WPlane board_plane(cv::Size2d(m_tag_size * m_cols * 2, m_tag_size * m_rows * 2), cv::viz::Color::gray());
+        // 设置半透明，取值范围 0.0(完全透明) ~ 1.0(完全不透明)
+        board_plane.setRenderingProperty(cv::viz::OPACITY, 0.3);
+        m_viz_win.showWidget("board_plane", board_plane);
+    }
+    else {
+        cv::viz::WPlane board_plane(cv::Size2d(m_tag_size * (m_cols + 1), m_tag_size * (m_rows + 1)), cv::viz::Color::gray());
+        // 设置半透明，取值范围 0.0(完全透明) ~ 1.0(完全不透明)
+        board_plane.setRenderingProperty(cv::viz::OPACITY, 0.3);
+        m_viz_win.showWidget("board_plane", board_plane);
+    }
     // 3. 标定板网格
-    cv::viz::WGrid board_grid(cv::Vec2i(m_cols, m_rows), cv::Vec2d(m_tag_size * 2, m_tag_size * 2), cv::viz::Color::white());
-    board_grid.setRenderingProperty(cv::viz::OPACITY, 0.5);
-    m_viz_win.showWidget("board_grid", board_grid);
-
+    if (m_multi_array) {
+        cv::viz::WGrid board_grid(cv::Vec2i(m_cols, m_rows), cv::Vec2d(m_tag_size * 2, m_tag_size * 2), cv::viz::Color::white());
+        board_grid.setRenderingProperty(cv::viz::OPACITY, 0.5);
+        m_viz_win.showWidget("board_grid", board_grid);
+    }
+    else {
+        cv::viz::WGrid board_grid(cv::Vec2i(m_cols + 1, m_rows + 1), cv::Vec2d(m_tag_size, m_tag_size), cv::viz::Color::white());
+        board_grid.setRenderingProperty(cv::viz::OPACITY, 0.5);
+        m_viz_win.showWidget("board_grid", board_grid);
+    }
     // 4. 相机立方体（静态控件，仅初始化一次）
     cv::viz::WCube cam_box(
         cv::Point3d(-m_tag_size * 0.5, -m_tag_size * 0.4, -m_tag_size * 0.2),
@@ -139,44 +153,85 @@ void VizBoardViewer::update3DView(const BoardResult& res)
     m_dynamic_tag_widgets.push_back("global_err");
 
     // 遍历所有Tag绘制标记与误差
-    for (const auto& tag : res.tag_results)
-    {
-        if (!tag.detect_ok || tag.predicts.size() != 4)
-            continue;
-        std::string vid = std::to_string(tag.value_id);
-        // Tag 轮廓线
-        std::string box_name = "value_box_" + vid;
-        std::vector<cv::Point3d> linePts(tag.predicts);
-        linePts.emplace_back(linePts.front());
-        cv::viz::WPolyLine line(linePts, cv::viz::Color::red());
-        line.setRenderingProperty(cv::viz::LINE_WIDTH, 1);
-        m_viz_win.showWidget(box_name, line);
-        m_dynamic_tag_widgets.push_back(box_name);
-        // 四角小球
-        for (int i = 0; i < 4; ++i)
+    if (m_multi_array) {
+        //针对多阵列显示
+        for (const auto& tag : res.tag_results)
         {
-            std::string sp_name = "val_p" + std::to_string(i) + "_" + vid;
-            cv::viz::WSphere sp(tag.predicts[i], m_tag_size * TAG_SPHERE_RATIO, TAG_SPHERE_RES, cv::viz::Color::green());
-            m_viz_win.showWidget(sp_name, sp);
-            m_dynamic_tag_widgets.push_back(sp_name);
+            if (!tag.detect_ok || tag.predicts.size() != 4)
+                continue;
+            std::string vid = std::to_string(tag.value_id);
+            // Tag 轮廓线
+            std::string box_name = "value_box_" + vid;
+            std::vector<cv::Point3d> linePts(tag.predicts);
+            linePts.emplace_back(linePts.front());
+            cv::viz::WPolyLine line(linePts, cv::viz::Color::red());
+            line.setRenderingProperty(cv::viz::LINE_WIDTH, 1);
+            m_viz_win.showWidget(box_name, line);
+            m_dynamic_tag_widgets.push_back(box_name);
+            // 四角小球
+            for (int i = 0; i < 4; ++i)
+            {
+                std::string sp_name = "val_p" + std::to_string(i) + "_" + vid;
+                cv::viz::WSphere sp(tag.predicts[i], m_tag_size * TAG_SPHERE_RATIO, TAG_SPHERE_RES, cv::viz::Color::green());
+                m_viz_win.showWidget(sp_name, sp);
+                m_dynamic_tag_widgets.push_back(sp_name);
+            }
+            // Tag ID 文字
+            std::string id_name = "val_id_" + vid;
+            cv::viz::WText3D id_text(vid, tag.predicts[0], m_tag_size * TAG_ID_SZ, true, cv::viz::Color::red());
+            m_viz_win.showWidget(id_name, id_text);
+            m_dynamic_tag_widgets.push_back(id_name);
+            // 单个Tag误差文字
+            cv::Point3d center(
+                (tag.predicts[0].x + tag.predicts[2].x) / 2.0,
+                (tag.predicts[0].y + tag.predicts[2].y) / 2.0,
+                m_tag_size * TAG_ERR_H
+            );
+
+            snprintf(buf, sizeof(buf), "Repro Err:%.5f", tag.single_err);
+            std::string err_name = "val_err_" + vid;
+            cv::viz::WText3D err_text(buf, center, m_tag_size * TAG_ERR_SZ, true, cv::viz::Color::orange());
+            m_viz_win.showWidget(err_name, err_text);
+            m_dynamic_tag_widgets.push_back(err_name);
         }
-        // Tag ID 文字
-        std::string id_name = "val_id_" + vid;
-        cv::viz::WText3D id_text(vid, tag.predicts[0], m_tag_size * TAG_ID_SZ, true, cv::viz::Color::red());
-        m_viz_win.showWidget(id_name, id_text);
-        m_dynamic_tag_widgets.push_back(id_name);
-        // 单个Tag误差文字
-        cv::Point3d center(
-            (tag.predicts[0].x + tag.predicts[2].x) / 2.0,
-            (tag.predicts[0].y + tag.predicts[2].y) / 2.0,
-            m_tag_size * TAG_ERR_H
-        );
-        
-        snprintf(buf, sizeof(buf), "Repro Err:%.5f", tag.single_err);
-        std::string err_name = "val_err_" + vid;
-        cv::viz::WText3D err_text(buf, center, m_tag_size * TAG_ERR_SZ, true, cv::viz::Color::orange());
-        m_viz_win.showWidget(err_name, err_text);
-        m_dynamic_tag_widgets.push_back(err_name);
+    }
+    else {
+        //针对多阵列显示
+        for (const auto& tag : res.tag_results)
+        {
+            if (!tag.detect_ok || tag.predicts.size() == 0)
+                continue;
+            std::string vid = std::to_string(tag.value_id);
+            // Tag 轮廓线
+            std::string box_name = "value_box_" + vid;
+            std::vector<cv::Point3d> linePts(tag.predicts);
+            //linePts.emplace_back(linePts.front());
+            cv::viz::WPolyLine line(linePts, cv::viz::Color::red());
+            line.setRenderingProperty(cv::viz::LINE_WIDTH, 1);
+            m_viz_win.showWidget(box_name, line);
+            m_dynamic_tag_widgets.push_back(box_name);
+            // 四角小球
+            for (int i = 0; i < tag.corners.size(); ++i)
+            {
+                std::string sp_name = "val_p" + std::to_string(i) + "_" + vid;
+                cv::viz::WSphere sp(tag.predicts[i], m_tag_size * TAG_SPHERE_RATIO, TAG_SPHERE_RES, cv::viz::Color::green());
+                m_viz_win.showWidget(sp_name, sp);
+                m_dynamic_tag_widgets.push_back(sp_name);
+            }
+            //// Tag ID 文字
+            //std::string id_name = "val_id_" + vid;
+            //cv::viz::WText3D id_text(vid, tag.predicts[0], m_tag_size * TAG_ID_SZ, true, cv::viz::Color::red());
+            //m_viz_win.showWidget(id_name, id_text);
+            //m_dynamic_tag_widgets.push_back(id_name);
+            // 单个Tag误差文字
+            cv::Point3d center(tag.predicts[0].x, tag.predicts[0].y, m_tag_size* TAG_ERR_H);
+
+            snprintf(buf, sizeof(buf), "Repro Err:%.5f", tag.single_err);
+            std::string err_name = "val_err_" + vid;
+            cv::viz::WText3D err_text(buf, center, m_tag_size * TAG_ERR_SZ, true, cv::viz::Color::orange());
+            m_viz_win.showWidget(err_name, err_text);
+            m_dynamic_tag_widgets.push_back(err_name);
+        }
     }
 
     m_viz_win.spinOnce(SPIN_DELAY_MS, true);

@@ -5,6 +5,7 @@
 #include "../include/ArucoModJointDetect.h"
 #include "../include/ArucoTagJointDetect.h"
 #include "../include/AprilTagJointDetect.h"
+#include "../include/ChessBoardDetect.h"
 #include "../include/BarcodeGlobalApi.h"
 #include "../include/VizBoardViewer.h"
 #include <iostream>
@@ -77,8 +78,8 @@ int static runUndistortDemo(const std::string& visionDir = "RGBVison") {
     //CameraUndistorter undist;
     //鱼眼相机标定
     //runFisheyeCalib(imgDir, saveXml);
-    runHiKFisheyeCalib(imgDir, saveXml);
-    //runFisheyeCalib_FromImages(imgDir, saveXml);
+    //runHiKFisheyeCalib(imgDir, saveXml);
+    runFisheyeCalib_FromImages(imgDir, saveXml);
 
     FisheyeUndist undist;
     if (!undist.init(saveXml))
@@ -470,7 +471,7 @@ int static runTagDetectDemo(const TagDetectParams& params) {
                     auto end = steady_clock::now();
                     double cost_time = duration_cast<milliseconds>(end - start).count();
                     printf("畸变校正和检测耗时%.3f ms\n", cost_time);
-                    // viz_viewer.update3DView(lastBoardRes);
+                    //viz_viewer.update3DView(lastBoardRes);
                 }
             }
             last_sample_time = now;
@@ -490,6 +491,179 @@ int static runTagDetectDemo(const TagDetectParams& params) {
             break;
         }
     }
+
+    videoCap.release();
+#ifndef RUN_IN_DOCKER
+    viz_viewer.closeWindow();
+    cv::destroyAllWindows();
+#endif
+    std::cout << "程序执行完成" << std::endl;
+    return 0;
+}
+
+int static runChessBoardDetectDemo(const TagDetectParams& params) {
+    std::string projectRoot = std::string(PROJECT_ROOT);
+    // 1. 鱼眼校正初始化
+    FisheyeUndist undist;
+    const std::string calibPath = projectRoot + "/HiKVision/fisheye_calib.xml";
+    if (!undist.init(calibPath))
+    {
+        std::cout << "加载鱼眼标定文件失败：" << calibPath << std::endl;
+        return -1;
+    }
+    cv::Mat K = undist.getCameraMatrix();
+    cv::Mat D = undist.getDistCoeffs();
+    std::cout << K << std::endl;
+    std::cout << D << std::endl;
+    // 2. 初始化Tag检测器
+    std::shared_ptr<TagJointDetect> tagDet;
+    TagType tagType = params.tagType;
+    int dictId = params.dictId;
+    std::string arucoDictStr = params.arucoDictStr;
+    auto arucoType = StringToArucoDictType(arucoDictStr);
+    AprilTagFamily aprilFamily = params.aprilFamily;
+    double tagSize = params.tagSize;
+    int rows = params.rows;
+    int cols = params.cols;
+    double tagDistX = params.tagDistX;
+    double tagDistY = params.tagDistY;
+    int arucoModStart = params.arucoModStart;
+    int arucoTagStart = params.arucoTagStart;
+    int aprilTagStart = params.aprilTagStart;
+    if (tagType == TagType::ARUCO_MOD) {
+        tagDet = std::make_shared<ArucoModJointDetect>(dictId, tagSize, rows, cols);
+        tagDet->setStartTagValue(arucoModStart);
+    }
+    else if (tagType == TagType::ARUCO_TAG) {
+        tagDet = std::make_shared<ArucoTagJointDetect>(arucoType, tagSize, rows, cols);
+        tagDet->setStartTagValue(arucoTagStart);
+    }
+    else if (tagType == TagType::APRIL_TAG) {
+        tagDet = std::make_shared<AprilTagJointDetect>(aprilFamily, tagSize, rows, cols);
+        tagDet->setStartTagValue(aprilTagStart);
+    }
+    else if (tagType == TagType::CHESS_BOARD) {
+        tagDet = std::make_shared<ChessBoardDetect>(cv::Size(cols, rows), tagSize);
+        tagDet->setMultiArrayType(false);
+    }
+    tagDet->setCameraParam(K, D);
+    tagDet->setBoardSize(rows, cols);
+    tagDet->setTagDist(tagDistX, tagDistY);
+#ifndef RUN_IN_DOCKER
+    const cv::Size img_size = undist.getImgSize();
+    VizBoardViewer viz_viewer(tagSize, K, img_size, rows, cols, false);
+#endif
+    // 3. 加载录制好的视频
+    std::string videoPath;
+    if (tagType == TagType::ARUCO_MOD) {
+        videoPath = projectRoot + "/HiKVision/mp4/record_aruco_mod.mp4";
+    }
+    else if (tagType == TagType::ARUCO_TAG) {
+        videoPath = projectRoot + "/HiKVision/mp4/record_aruco_tag.mp4";
+    }
+    else if (tagType == TagType::APRIL_TAG) {
+        videoPath = projectRoot + "/HiKVision/mp4/record_april_tag.mp4";
+    }
+    else if (tagType == TagType::CHESS_BOARD) {
+        videoPath = projectRoot + "/HiKVision/mp4/record_april_tag.mp4";
+    }
+    cv::VideoCapture videoCap(videoPath);
+    /*if (!videoCap.isOpened())
+    {
+        std::cout << "加载视频失败：" << videoPath << std::endl;
+        return -1;
+    }*/
+//#ifndef RUN_IN_DOCKER
+//    cv::namedWindow("Correct Image", cv::WINDOW_NORMAL);
+//    cv::setWindowProperty("Correct Image", cv::WND_PROP_TOPMOST, cv::WINDOW_GUI_NORMAL);
+//#endif
+    // 定时参数：25毫秒采样一次位姿
+    const int sample_interval_ms = 25;
+    auto last_sample_time = steady_clock::now();
+    cv::Mat frameVideo, frameFix;
+    BoardResult lastBoardRes;
+
+    for (int i = 0; ; ++i) {
+        std::string jpgPath = projectRoot + cv::format("/HiKVision/fisheye_img/Image_20260715101804668.bmp", i);
+        cv::Mat img = cv::imread(jpgPath);
+        if (img.empty()) break;
+        auto start = steady_clock::now();
+        frameFix = undist.undistortImage(img);
+        if (!frameFix.empty())
+        {
+            lastBoardRes = tagDet->detect(frameFix);
+            tagDet->drawBoardResult(frameFix, lastBoardRes);
+            // 打印相机光心在世界坐标系中的坐标
+            if (lastBoardRes.board_pose_valid)
+            {
+                double cx = lastBoardRes.camera_tvec[0];
+                double cy = lastBoardRes.camera_tvec[1];
+                double cz = lastBoardRes.camera_tvec[2];
+                std::cout << std::fixed << std::setprecision(4);
+                std::cout << "相机光心在以阵列中心为世界坐标原点的坐标(m) X: " << cx
+                    << "  Y: " << cy << "  Z: " << cz << std::endl;
+                auto end = steady_clock::now();
+                double cost_time = duration_cast<milliseconds>(end - start).count();
+                printf("畸变校正和检测耗时%.3f ms\n", cost_time);
+                viz_viewer.update3DView(lastBoardRes);
+            }
+        }
+    }
+
+//  std::cout << "\n===== 开始解析视频并检测Tag =====" << std::endl;
+
+//    while (true)
+//    {
+//        if (!videoCap.read(frameVideo))
+//        {
+//            std::cout << "视频播放完毕" << std::endl;
+//            break;
+//        }
+//
+//        auto now = steady_clock::now();
+//        auto sample_delta = duration_cast<milliseconds>(now - last_sample_time).count();
+//
+//        // 每1秒执行一次校正+检测
+//        if (sample_delta >= sample_interval_ms)
+//        {
+//            auto start = steady_clock::now();
+//            frameFix = undist.undistortImage(frameVideo);
+//            if (!frameFix.empty())
+//            {
+//                lastBoardRes = tagDet->detect(frameFix);
+//                tagDet->drawBoardResult(frameFix, lastBoardRes);
+//                // 打印相机光心在世界坐标系中的坐标
+//                if (lastBoardRes.board_pose_valid)
+//                {
+//                    double cx = lastBoardRes.camera_tvec[0];
+//                    double cy = lastBoardRes.camera_tvec[1];
+//                    double cz = lastBoardRes.camera_tvec[2];
+//                    std::cout << std::fixed << std::setprecision(4);
+//                    std::cout << "相机光心在以阵列中心为世界坐标原点的坐标(m) X: " << cx
+//                        << "  Y: " << cy << "  Z: " << cz << std::endl;
+//                    auto end = steady_clock::now();
+//                    double cost_time = duration_cast<milliseconds>(end - start).count();
+//                    printf("畸变校正和检测耗时%.3f ms\n", cost_time);
+//                    // viz_viewer.update3DView(lastBoardRes);
+//                }
+//            }
+//            last_sample_time = now;
+//        }
+//#ifndef RUN_IN_DOCKER
+//        // 画面刷新
+//        if (!frameFix.empty())
+//        {
+//            cv::imshow("Correct Image", frameFix);
+//        }
+//#endif
+//        // 中途退出
+//        int key = cv::waitKey(1);
+//        if (key == 'q' || key == 27)
+//        {
+//            std::cout << "手动退出视频解析" << std::endl;
+//            break;
+//        }
+//    }
 
     videoCap.release();
 #ifndef RUN_IN_DOCKER
@@ -540,8 +714,8 @@ int main()
     SetConsoleOutputCP(65001); // 控制台切换UTF8(65001),中文不乱码
 #endif
     int ret = -1;
-    std::string visionDir = "HIKVIsion";
-    ret = runUndistortDemo(visionDir);
+    std::string visionDir = "HIKVision";
+    //ret = runUndistortDemo(visionDir);
     
     //调用独立录制函数：摄像头录制视频
     /*const std::string videoFile = "../mp4/record_aruco_tag.mp4";
@@ -552,10 +726,14 @@ int main()
         return -1;
     }*/
     TagDetectParams params;
-    const int rows = params.rows;
-    const int cols = params.cols;
-    params.tagType = TagType::APRIL_TAG;
-    std::cout<<"rows="<<rows<<" cols="<<cols<<std::endl;
+    params.rows = 8;
+    params.cols = 11;
+    params.tagSize = 0.01;
+    params.tagDistX = 0.01;
+    params.tagDistY = 0.01;
+    params.tagType = TagType::CHESS_BOARD;
+    std::cout<<"rows="<<params.rows<<" cols="<<params.cols<<std::endl;
+    ret = runChessBoardDetectDemo(params);
     //ret = runTagDetectRealTime(params);
     //ret = runTagDetectDemo(params);
     //ret = runCalculateCameraPose();

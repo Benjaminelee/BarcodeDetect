@@ -8,9 +8,16 @@ TagJointDetect::TagJointDetect(double tag_size, int rows, int cols)
     , m_dx(0.05)
     , m_dy(0.05)
     , m_joint_estimate(true)
+    , m_multi_array(true)
     , m_stag(0)
     , m_gridN(4)
 {
+}
+
+// 设置单/多阵列标志位
+void TagJointDetect::setMultiArrayType(bool mutiArray)
+{
+    m_multi_array = mutiArray;
 }
 
 // 设置联合估计标志位
@@ -184,29 +191,52 @@ int TagJointDetect::getTagInnerGrids() const
 bool TagJointDetect::buildImageAndObjectPoints(const std::vector<TagResult>& tag_results) {
     m_image_pts.clear();
     m_object_pts.clear();
-    m_image_pts.reserve(tag_results.size() * 4);
-    m_object_pts.reserve(tag_results.size() * 4);
-    for (const auto& res : tag_results) {
-        if (!res.detect_ok) continue;
-        int row = -1, col = -1;
-        if (!getTagIndex(res.tag_id, row, col))
-            continue;
-        // 获取当前tag的3D中心
-        auto it = m_tag_3d_centers.find(res.tag_id);
-        if (it == m_tag_3d_centers.end())
-            continue;
-        cv::Point3d tag_center_3d = it->second;
-        // 单个tag的4个角点相对于中心的3D坐标, y轴向下
-        std::vector<cv::Point3d> tag_corners_3d = {
-            cv::Point3d(-m_tag_size / 2, -m_tag_size / 2, 0),
-            cv::Point3d(m_tag_size / 2, -m_tag_size / 2, 0),
-            cv::Point3d(m_tag_size / 2, m_tag_size / 2, 0),
-            cv::Point3d(-m_tag_size / 2, m_tag_size / 2, 0)
-        };
-        // 转换到阵列坐标系
-        for (size_t i = 0; i < 4; ++i) {
-            m_object_pts.emplace_back(tag_center_3d + tag_corners_3d[i]);
-            m_image_pts.emplace_back(res.corners[i]);
+    if (m_multi_array) {
+        m_image_pts.reserve(tag_results.size() * 4);
+        m_object_pts.reserve(tag_results.size() * 4);
+        for (const auto& res : tag_results) {
+            if (!res.detect_ok) continue;
+            int row = -1, col = -1;
+            if (!getTagIndex(res.tag_id, row, col))
+                continue;
+            // 获取当前tag的3D中心
+            auto it = m_tag_3d_centers.find(res.tag_id);
+            if (it == m_tag_3d_centers.end())
+                continue;
+            cv::Point3d tag_center_3d = it->second;
+            // 单个tag的4个角点相对于中心的3D坐标, y轴向下
+            std::vector<cv::Point3d> tag_corners_3d = {
+                cv::Point3d(-m_tag_size / 2, -m_tag_size / 2, 0),
+                cv::Point3d(m_tag_size / 2, -m_tag_size / 2, 0),
+                cv::Point3d(m_tag_size / 2, m_tag_size / 2, 0),
+                cv::Point3d(-m_tag_size / 2, m_tag_size / 2, 0)
+            };
+            // 转换到阵列坐标系
+            for (size_t i = 0; i < 4; ++i) {
+                m_object_pts.emplace_back(tag_center_3d + tag_corners_3d[i]);
+                m_image_pts.emplace_back(res.corners[i]);
+            }
+        }
+    }
+    else {
+        m_image_pts.reserve(tag_results.size() * m_board_rows * m_board_cols);
+        m_object_pts.reserve(tag_results.size() * m_board_rows * m_board_cols);
+        double center_x = (m_board_cols + 1) * m_tag_size / 2.0;
+        double center_y = (m_board_rows + 1) * m_tag_size / 2.0;
+        // 类似棋盘完整3D世界点，Z=0平面，以棋盘中心为3D世界坐标系原点
+        for (const auto& res : tag_results) {
+            if (!res.detect_ok) continue;
+            int row = -1, col = -1;
+            if (!getTagIndex(res.tag_id, row, col))
+                continue;
+            //计算每个Tag角点坐标
+            double wx = (col + 1) * m_tag_size;
+            double wy = (row + 1) * m_tag_size;
+            m_object_pts.emplace_back(wx - center_x, wy - center_y, 0.0);
+            int tag_index = row * m_board_cols + col;
+            for (const auto& pt : res.corners) {
+                m_image_pts.emplace_back(pt);
+            }
         }
     }
     // 至少需要4个点对（1个tag）才能进行PnP求解

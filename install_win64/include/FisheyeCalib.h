@@ -15,6 +15,13 @@ bool runFisheyeCalib(const std::string& imgDir = "../fisheye_img",
                     int width = 640,
                     int height = 480);
 
+// 海康相机鱼眼标定：采集+保存xml
+bool runHiKFisheyeCalib(const std::string& imgDir = "../fisheye_img",
+                        const std::string& saveXml = "../fisheye_calib.xml",
+                        int capId = 0,
+                        int width = 5472,
+                        int height = 3648);
+
 //离线文件夹标定鱼眼
 bool runFisheyeCalib_FromImages(const std::string& imgDir = "../fisheye_img", const std::string& saveXml = "../fisheye_calib.xml");
 

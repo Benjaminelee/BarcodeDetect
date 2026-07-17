@@ -276,7 +276,11 @@ bool runFisheyeCalib_FromImages(const std::string& imgDir, const std::string& sa
 
     cv::Mat K, D;
     std::vector<cv::Mat> r, t;
-    int flag = cv::fisheye::CALIB_RECOMPUTE_EXTRINSIC | cv::fisheye::CALIB_CHECK_COND | cv::fisheye::CALIB_FIX_SKEW;
+    int flag = cv::fisheye::CALIB_RECOMPUTE_EXTRINSIC
+        | cv::fisheye::CALIB_CHECK_COND
+        | cv::fisheye::CALIB_FIX_SKEW
+        | cv::fisheye::CALIB_FIX_K3
+        | cv::fisheye::CALIB_FIX_K4;
     double err = cv::fisheye::calibrate(objPts, imgPts, sz, K, D, r, t, flag,
         cv::TermCriteria(cv::TermCriteria::EPS + cv::TermCriteria::MAX_ITER, 30, 1e-6));
 

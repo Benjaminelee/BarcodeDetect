@@ -13,6 +13,9 @@ public:
     virtual ~TagJointDetect() = default;
 
     // ========== 公共接口（子类复用实现） ==========
+    // 设置单/多阵列标志位
+    void setMultiArrayType(bool mutiArray);
+
     // 设置联合估计标志位
     void setJointEstimate(bool jointEst);
 
@@ -75,6 +78,7 @@ private:
     double m_dx;                      ///< 行相邻marker中心间距(m)
     double m_dy;                      ///< 列相邻marker中心间距(m)
     bool m_joint_estimate;            ///< 是否启用联合估计
+    bool m_multi_array;               ///< 是否是多阵列/单阵列
 
     int m_stag;                       ///< 阵列起始码数值
     int m_gridN;                      ///< 内部格子数（m_gridN * m_gridN）

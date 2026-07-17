@@ -11,8 +11,9 @@
 class VizBoardViewer
 {
 public:
-    VizBoardViewer(double tag_size, const cv::Mat& K, const cv::Size& img_size, int rows = 4, int cols = 5);
+    VizBoardViewer(double tag_size, const cv::Mat& K, const cv::Size& img_size, int rows = 4, int cols = 5, bool mltiArray = true);
     ~VizBoardViewer();
+    void setMultiArrayType(bool multiArray);
     void update3DView(const BoardResult& res);
     void closeWindow();
     bool isWindowClosed() const;
@@ -26,6 +27,7 @@ private:
     cv::viz::Viz3d m_viz_win;
     std::vector<std::string> m_dynamic_tag_widgets;
     std::vector<std::string> m_static_widgets;
+    bool m_multi_array;
     cv::Mat m_K;
     cv::Size m_img_size;
     int m_rows;

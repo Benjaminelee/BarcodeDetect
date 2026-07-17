@@ -13,7 +13,8 @@ enum class TagType
 {
     ARUCO_MOD, ///< opencv aruco模块
     ARUCO_TAG, ///< aruco原生库
-    APRIL_TAG  ///< april原生库
+    APRIL_TAG, ///< april原生库
+    CHESS_BOARD ///<棋盘格单阵列
 };
 
 enum class AprilTagFamily {
