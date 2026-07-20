@@ -8,6 +8,8 @@
 #include "../include/ChessBoardDetect.h"
 #include "../include/BarcodeGlobalApi.h"
 #include "../include/VizBoardViewer.h"
+#include "../include/HikCamera.h"
+#include <numeric>
 #include <iostream>
 #include <fstream>
 #include <iomanip>
@@ -331,7 +333,7 @@ int static runTagDetectRealTime(const TagDetectParams& params) {
                     double cx = lastBoardRes.camera_tvec[0];
                     double cy = lastBoardRes.camera_tvec[1];
                     double cz = lastBoardRes.camera_tvec[2];
-                    std::cout << "相机光心在以阵列中心为世界坐标原点的坐标(m) X: " << cx
+                    std::cout << "相机光心在board阵列坐标系的坐标(m) X: " << cx
                         << "  Y: " << cy << "  Z: " << cz << std::endl;
                     auto end = steady_clock::now();
                     double cost_time = duration_cast<milliseconds>(end - start).count();
@@ -466,7 +468,7 @@ int static runTagDetectDemo(const TagDetectParams& params) {
                     double cy = lastBoardRes.camera_tvec[1];
                     double cz = lastBoardRes.camera_tvec[2];
                     std::cout << std::fixed << std::setprecision(4);
-                    std::cout << "相机光心在以阵列中心为世界坐标原点的坐标(m) X: " << cx
+                    std::cout << "相机光心在board阵列坐标系的坐标(m) X: " << cx
                         << "  Y: " << cy << "  Z: " << cz << std::endl;
                     auto end = steady_clock::now();
                     double cost_time = duration_cast<milliseconds>(end - start).count();
@@ -582,88 +584,99 @@ int static runChessBoardDetectDemo(const TagDetectParams& params) {
     auto last_sample_time = steady_clock::now();
     cv::Mat frameVideo, frameFix;
     BoardResult lastBoardRes;
-
-    for (int i = 0; ; ++i) {
-        std::string jpgPath = projectRoot + cv::format("/HiKVision/fisheye_img/Image_20260715101804668.bmp", i);
-        cv::Mat img = cv::imread(jpgPath);
-        if (img.empty()) break;
-        auto start = steady_clock::now();
-        frameFix = undist.undistortImage(img);
-        if (!frameFix.empty())
-        {
-            lastBoardRes = tagDet->detect(frameFix);
-            tagDet->drawBoardResult(frameFix, lastBoardRes);
-            // 打印相机光心在世界坐标系中的坐标
-            if (lastBoardRes.board_pose_valid)
+    SdkLifeGuard sdkGuard;
+    if (!sdkGuard.IsSdkReady())
+    {
+        std::cout << "SDK初始化失败，直接退出" << std::endl;
+        return false;
+    }
+    HikCamera camera;
+    try {
+        if (!camera.OpenUsbCamera()) {
+            std::cout << "[验证] 海康相机打开失败，退出采集" << std::endl;
+            return false;
+        }
+        int windows = 10;
+        int emptyFrameCnt = 0;
+        cv::Mat frame, bgr;
+        std::vector<cv::Vec3d> poseBuffer;
+        auto calcMean = [](const std::vector<double>& arr) -> double {
+            double sum = std::accumulate(arr.begin(), arr.end(), 0.0);
+            return sum / arr.size();
+            };
+        auto calcDev = [](const std::vector<double>& arr, double mean) -> double {
+            double varSum = 0.0;
+            for (double v : arr)
             {
-                double cx = lastBoardRes.camera_tvec[0];
-                double cy = lastBoardRes.camera_tvec[1];
-                double cz = lastBoardRes.camera_tvec[2];
-                std::cout << std::fixed << std::setprecision(4);
-                std::cout << "相机光心在以阵列中心为世界坐标原点的坐标(m) X: " << cx
-                    << "  Y: " << cy << "  Z: " << cz << std::endl;
-                auto end = steady_clock::now();
-                double cost_time = duration_cast<milliseconds>(end - start).count();
-                printf("畸变校正和检测耗时%.3f ms\n", cost_time);
-                viz_viewer.update3DView(lastBoardRes);
+                double diff = v - mean;
+                varSum += diff * diff;
+            }
+            return std::sqrt(varSum / arr.size());
+            };
+        while (emptyFrameCnt < 10) {
+            frame = camera.GetFrame(30);
+            if (frame.empty()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                ++emptyFrameCnt;
+                continue;
+            }
+            auto start = steady_clock::now();
+            frameFix = undist.undistortImage(frame);
+            if (!frameFix.empty())
+            {
+                lastBoardRes = tagDet->detect(frameFix);
+                tagDet->drawBoardResult(frameFix, lastBoardRes);
+                // 打印相机光心在世界坐标系中的坐标
+                if (lastBoardRes.board_pose_valid)
+                {
+                    double cx = lastBoardRes.camera_tvec[0];
+                    double cy = lastBoardRes.camera_tvec[1];
+                    double cz = lastBoardRes.camera_tvec[2];
+                    /*std::cout << std::fixed << std::setprecision(5);
+                    std::cout << "相机光心在board阵列坐标系的坐标(m) X: " << cx
+                        << "  Y: " << cy << "  Z: " << cz << std::endl;
+                    auto end = steady_clock::now();
+                    double cost_time = duration_cast<milliseconds>(end - start).count();
+                    printf("畸变校正和检测耗时%.3f ms\n", cost_time);
+                    viz_viewer.update3DView(lastBoardRes);*/
+                    poseBuffer.emplace_back(cx, cy, cz);
+                    if (poseBuffer.size() >= windows)
+                    {
+                        std::vector<double> xs, ys, zs;
+                        for (auto& p : poseBuffer)
+                        {
+                            xs.emplace_back(p[0] * 1000.0);
+                            ys.emplace_back(p[1] * 1000.0);
+                            zs.emplace_back(p[2] * 1000.0);
+                        }
+                        double meanX = calcMean(xs);
+                        double meanY = calcMean(ys);
+                        double meanZ = calcMean(zs);
+
+                        double varX = calcDev(xs, meanX);
+                        double varY = calcDev(ys, meanY);
+                        double varZ = calcDev(zs, meanZ);
+                        cv::Mat showFrame;
+                        cv::resize(frame, showFrame, cv::Size(), 1.0 / 8.0, 1.0 / 8.0, cv::INTER_LINEAR);
+                        cv::imshow("current_frame", showFrame);
+                        cv::waitKey(1);
+                        std::cout << "\n===== 连续10帧位姿统计结果 =====\n";
+                        std::cout << "平均坐标(mm) X: " << meanX << " Y: " << meanY << " Z: " << meanZ << "\n";
+                        std::cout << "三轴均方差(mm) X: " << varX << " Y: " << varY << " Z: " << varZ << "\n\n";
+                        poseBuffer.clear();
+                    }
+                }
             }
         }
     }
-
-//  std::cout << "\n===== 开始解析视频并检测Tag =====" << std::endl;
-
-//    while (true)
-//    {
-//        if (!videoCap.read(frameVideo))
-//        {
-//            std::cout << "视频播放完毕" << std::endl;
-//            break;
-//        }
-//
-//        auto now = steady_clock::now();
-//        auto sample_delta = duration_cast<milliseconds>(now - last_sample_time).count();
-//
-//        // 每1秒执行一次校正+检测
-//        if (sample_delta >= sample_interval_ms)
-//        {
-//            auto start = steady_clock::now();
-//            frameFix = undist.undistortImage(frameVideo);
-//            if (!frameFix.empty())
-//            {
-//                lastBoardRes = tagDet->detect(frameFix);
-//                tagDet->drawBoardResult(frameFix, lastBoardRes);
-//                // 打印相机光心在世界坐标系中的坐标
-//                if (lastBoardRes.board_pose_valid)
-//                {
-//                    double cx = lastBoardRes.camera_tvec[0];
-//                    double cy = lastBoardRes.camera_tvec[1];
-//                    double cz = lastBoardRes.camera_tvec[2];
-//                    std::cout << std::fixed << std::setprecision(4);
-//                    std::cout << "相机光心在以阵列中心为世界坐标原点的坐标(m) X: " << cx
-//                        << "  Y: " << cy << "  Z: " << cz << std::endl;
-//                    auto end = steady_clock::now();
-//                    double cost_time = duration_cast<milliseconds>(end - start).count();
-//                    printf("畸变校正和检测耗时%.3f ms\n", cost_time);
-//                    // viz_viewer.update3DView(lastBoardRes);
-//                }
-//            }
-//            last_sample_time = now;
-//        }
-//#ifndef RUN_IN_DOCKER
-//        // 画面刷新
-//        if (!frameFix.empty())
-//        {
-//            cv::imshow("Correct Image", frameFix);
-//        }
-//#endif
-//        // 中途退出
-//        int key = cv::waitKey(1);
-//        if (key == 'q' || key == 27)
-//        {
-//            std::cout << "手动退出视频解析" << std::endl;
-//            break;
-//        }
-//    }
+    catch (...)
+    {
+        std::cout << "采集过程发生异常，释放资源" << std::endl;
+        camera.CloseCamera();
+        return false;
+    }
+    // 正常退出，先释放相机，再释放全局SDK
+    camera.CloseCamera();
 
     videoCap.release();
 #ifndef RUN_IN_DOCKER

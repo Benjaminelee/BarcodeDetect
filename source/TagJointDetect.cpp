@@ -396,13 +396,14 @@ void TagJointDetect::updateBoardInformation(BoardResult& result) const {
     }
 
     // 计算每个tag的平均投影误差
-    if (m_object_pts.size() % 4 != 0) return;
-    if (m_object_pts.size() / 4 != result.tag_results.size()) return;
+    if (result.tag_results.size() == 0) return;
+    if (m_object_pts.size() % result.tag_results.size() != 0) return;
+    int nums = m_object_pts.size() / result.tag_results.size();
     for (int i = 0; i < result.tag_results.size(); ++i) {
         auto& tag_res = result.tag_results[i];
         double single_err = 0.0;
         for (int j = 0; j < tag_res.predicts.size(); ++j) {
-            int k = 4 * i + j;
+            int k = nums * i + j;
             const auto& mp = m_object_pts[k];
             const auto& pre = tag_res.predicts[j];
             cv::Point3d diff = mp - pre;
@@ -416,13 +417,15 @@ void TagJointDetect::updateBoardInformation(BoardResult& result) const {
 void TagJointDetect::drawBoardResult(cv::Mat& dst, const BoardResult& res)const
 {
     // 绘制单个tag
+    if (res.tag_results.size() == 0) return;
+    int nums = m_object_pts.size() / res.tag_results.size();
     for (auto& item : res.tag_results)
     {
         if (!item.detect_ok) continue;
         // 画四角边框
-        for (size_t i = 0; i < 4; i++)
+        for (size_t i = 0; i < nums; i++)
         {
-            cv::line(dst, item.corners[i], item.corners[(i + 1) % 4], cv::Scalar(0, 255, 0), 1);
+            cv::line(dst, item.corners[i], item.corners[(i + 1) % nums], cv::Scalar(0, 255, 0), 1);
         }
         // 绘制ID文字
         cv::putText(dst, std::to_string(item.value_id), item.corners[0],

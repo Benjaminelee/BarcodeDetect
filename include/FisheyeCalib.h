@@ -6,7 +6,7 @@
 
 // 和原有标定板参数保持一致：12×9内角、方格10mm
 const cv::Size FISH_BOARD_SIZE = cv::Size(11,8);
-const float    FISH_SQUARE_MM  = 10.0f;
+const float    FISH_SQUARE_MM  = 35.0f;
 
 // 鱼眼标定：采集+保存xml
 bool runFisheyeCalib(const std::string& imgDir = "../fisheye_img",

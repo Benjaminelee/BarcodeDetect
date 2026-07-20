@@ -142,16 +142,21 @@ bool runHiKFisheyeCalib(const std::string& imgSaveDir,
                 break;
             }
             bool found = findChessboardCorners(frame, FISH_BOARD_SIZE, corners,
-                CALIB_CB_ADAPTIVE_THRESH + CALIB_CB_NORMALIZE_IMAGE + CALIB_CB_FILTER_QUADS);
-
+                CALIB_CB_ADAPTIVE_THRESH + CALIB_CB_NORMALIZE_IMAGE + CALIB_CB_FAST_CHECK);
+            cv::imwrite("HiK_test.jpg", frame);
             if (found) {
                 // 亚像素优化角点
                 cornerSubPix(frame, corners, cv::Size(15, 15), Size(-1, -1),
                     TermCriteria(TermCriteria::EPS + TermCriteria::MAX_ITER, 30, 1e-4));
                 cvtColor(frame, bgr, COLOR_GRAY2BGR);
-                drawChessboardCorners(bgr, FISH_BOARD_SIZE, corners, found);
+                //drawChessboardCorners(bgr, FISH_BOARD_SIZE, corners, found);
+                
+                cv::Mat showFrame;
+                cv::resize(frame, showFrame, cv::Size(), 1.0 / 8.0, 1.0 / 8.0, cv::INTER_LINEAR);
+                cv::imshow("current_frame", showFrame);
+                cv::waitKey(-1);
             }
-            //cv::imwrite("HiK_test.jpg", frame);
+            
             std::cout << "请输入键决定是否存图还是退出" << std::endl;
             int key = 0;
             while (true) {
@@ -165,10 +170,10 @@ bool runHiKFisheyeCalib(const std::string& imgSaveDir,
             if ((key == 's' || key == 'S') && found) {
                 objPoints.push_back(objSingle);
                 imgPoints.push_back(corners);
-                std::string savePath = imgSaveDir + "/img_" + std::to_string(saveCount) + ".png";
+                std::string savePath = imgSaveDir + "/img_" + std::to_string(saveCount + 4) + ".png";
                 imwrite(savePath, bgr);
                 saveCount++;
-                std::cout << "已保存第" << saveCount << "张标定图" << std::endl;
+                std::cout << "已保存第" << saveCount + 4 << "张标定图" << std::endl;
             }
             // ESC退出采集
             if (key == 'q' || key == 27) break;
@@ -278,9 +283,7 @@ bool runFisheyeCalib_FromImages(const std::string& imgDir, const std::string& sa
     std::vector<cv::Mat> r, t;
     int flag = cv::fisheye::CALIB_RECOMPUTE_EXTRINSIC
         | cv::fisheye::CALIB_CHECK_COND
-        | cv::fisheye::CALIB_FIX_SKEW
-        | cv::fisheye::CALIB_FIX_K3
-        | cv::fisheye::CALIB_FIX_K4;
+        | cv::fisheye::CALIB_FIX_SKEW;
     double err = cv::fisheye::calibrate(objPts, imgPts, sz, K, D, r, t, flag,
         cv::TermCriteria(cv::TermCriteria::EPS + cv::TermCriteria::MAX_ITER, 30, 1e-6));
 

@@ -224,9 +224,9 @@ void VizBoardViewer::update3DView(const BoardResult& res)
             //m_viz_win.showWidget(id_name, id_text);
             //m_dynamic_tag_widgets.push_back(id_name);
             // 单个Tag误差文字
-            cv::Point3d center(tag.predicts[0].x, tag.predicts[0].y, m_tag_size* TAG_ERR_H);
+            cv::Point3d center(tag.predicts[0].x, tag.predicts[0].y + m_tag_size * TAG_ERR_H, m_tag_size* TAG_ERR_H);
 
-            snprintf(buf, sizeof(buf), "Repro Err:%.5f", tag.single_err);
+            snprintf(buf, sizeof(buf), "Err:%.5f", tag.single_err * 1000.0); //误差，单位mm
             std::string err_name = "val_err_" + vid;
             cv::viz::WText3D err_text(buf, center, m_tag_size * TAG_ERR_SZ, true, cv::viz::Color::orange());
             m_viz_win.showWidget(err_name, err_text);
