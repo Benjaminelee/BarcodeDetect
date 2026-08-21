@@ -41,6 +41,12 @@ public:
     // 阻塞获取图像，timeoutMs超时返回空Mat
     cv::Mat GetFrame(uint32_t timeoutMs = 10);
 
+    //设置曝光时间，单位微秒
+    bool SetExposureTimeUs(int expUs);
+
+    //读取曝光时间
+    int GetExposureTimeUs();
+
     // 停止采集、注销回调、关闭设备、销毁句柄
     void CloseCamera();
 

@@ -118,7 +118,7 @@ bool runCameraCalibration_FromImages(const std::string& imgDir, const std::strin
 
     cv::Size imgSize;
     int validCnt = 0;
-
+    std::vector<std::string> validFileNames;
     // 遍历目录所有jpg
     for (auto& entry : fs::directory_iterator(imgDir))
     {
@@ -140,6 +140,7 @@ bool runCameraCalibration_FromImages(const std::string& imgDir, const std::strin
                 cv::TermCriteria(cv::TermCriteria::EPS + cv::TermCriteria::MAX_ITER, 30, 1e-4));
             objPoints.push_back(objSingle);
             imgPoints.push_back(corners);
+            validFileNames.push_back(entry.path().filename().string());
             validCnt++;
             std::cout << "有效:" << validCnt << " | " << entry.path().filename() << std::endl;
         }
@@ -156,8 +157,43 @@ bool runCameraCalibration_FromImages(const std::string& imgDir, const std::strin
     std::vector<cv::Mat> rvecs, tvecs;
     double err = cv::calibrateCamera(objPoints, imgPoints, imgSize, cameraMat, distCoeff, rvecs, tvecs);
 
+    std::vector<double> eachImgError;
+    double totalSquareErr = 0.0;
+    int totalPoints = 0;
+
+    for (int i = 0; i < (int)objPoints.size(); i++)
+    {
+        std::vector<cv::Point2f> projPoints;
+        // 鱼眼专用投影函数，不要用普通 cv::projectPoints
+        cv::projectPoints(objPoints[i], rvecs[i], tvecs[i], cameraMat, distCoeff, projPoints);
+
+        double squareSum = 0.0;
+        int pointNum = (int)imgPoints[i].size();
+        for (int p = 0; p < pointNum; p++)
+        {
+            double dx = imgPoints[i][p].x - projPoints[p].x;
+            double dy = imgPoints[i][p].y - projPoints[p].y;
+            squareSum += dx * dx + dy * dy;
+        }
+        // 当前图片 RMS 重投影误差
+        double rms = std::sqrt(squareSum / pointNum);
+        eachImgError.push_back(rms);
+
+        totalSquareErr += squareSum;
+        totalPoints += pointNum;
+
+        std::cout << "图片[" << i << "] " << validFileNames[i]
+            << " 单张RMS重投影误差 = " << rms << " 像素" << std::endl;
+    }
+
+    // 整体RMS，用来和calibrate返回值做对比
+    double overallRms = std::sqrt(totalSquareErr / totalPoints);
+    std::cout << "\ncalibrate接口返回整体误差：" << err << std::endl;
+    std::cout << "手动计算整体RMS误差：" << overallRms << std::endl;
+
     cv::FileStorage fs(saveXmlPath, cv::FileStorage::WRITE);
     fs << "cameraMatrix" << cameraMat << "distCoeffs" << distCoeff << "imageSize" << imgSize << "reproError" << err;
+    fs << "singleImageRMS" << eachImgError;
     fs.release();
 
     std::cout << "\n针孔离线标定完成，误差:" << err << "\n输出:" << saveXmlPath << std::endl;

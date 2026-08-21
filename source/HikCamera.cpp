@@ -290,6 +290,25 @@ cv::Mat HikCamera::GetFrame(uint32_t timeoutMs)
     }
 }
 
+bool HikCamera::SetExposureTimeUs(int expUs)
+{
+    int nRet = MV_CC_SetFloatValue(m_handle, "ExposureTime", static_cast<float>(expUs));
+    if (MV_OK != nRet)
+    {
+        std::cout << "设置曝光失败!" << std::endl;
+        return false;
+    }
+    return true;
+}
+
+int HikCamera::GetExposureTimeUs()
+{
+    MVCC_FLOATVALUE stFloatValue;
+    memset(&stFloatValue, 0, sizeof(MVCC_FLOATVALUE));
+    MV_CC_GetFloatValue(m_handle, "ExposureTime", &stFloatValue);
+    return static_cast<int>(stFloatValue.fCurValue);
+}
+
 void HikCamera::CloseCamera()
 {
     m_bExit = true;

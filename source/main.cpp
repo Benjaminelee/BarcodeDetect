@@ -70,19 +70,49 @@ static aruco::Dictionary::DICT_TYPES StringToArucoDictType(const std::string& st
     return arucoType;
 }
 
-int static runUndistortDemo(const std::string& visionDir = "RGBVison") {
+int static runUndistortDemo(const std::string& visionDir = "RGBVison", const std::string& model_type = "fisheye", bool IsOnLine = false, bool monocular = true) {
 
-    std::string imgDir = "../" + visionDir + "/fisheye_img";
-    std::string saveXml = "../" + visionDir + "/fisheye_calib.xml";
-    // 1.如需重新标定，取消下一行注释
+    std::string imgDir = "../" + visionDir + "/collect_img";
+    std::string saveXml = "../" + visionDir + "/" + (monocular ? (model_type + "_calib.xml") : "stereo_calib.xml");
     //runCameraCalibration(imgDir, saveXml, 0, 640, 480);
-    // 2.初始化校正器
+    // 初始化校正器
     //CameraUndistorter undist;
-    //鱼眼相机标定
-    //runFisheyeCalib(imgDir, saveXml);
-    //runHiKFisheyeCalib(imgDir, saveXml);
-    runFisheyeCalib_FromImages(imgDir, saveXml);
-
+    // 在线标定
+    if (IsOnLine) {
+        if (monocular) {
+            if (model_type == "fisheye") {
+                //runFisheyeCalib(imgDir, saveXml);
+                runHiKFisheyeCalib(imgDir, saveXml);
+            }
+            //普通针孔相机
+            else if (model_type == "camera") {
+                runCameraCalibration(imgDir, saveXml);
+            }
+        }
+        //双目联合标定
+        else {
+            if (model_type == "fisheye") {
+                runStereoFisheyeCalib(imgDir, saveXml);
+            }
+        }
+    }
+    //离线标定
+    else {
+        if (monocular) {
+            if (model_type == "fisheye") {
+                runFisheyeCalib_FromImages(imgDir, saveXml);
+            }
+            else if (model_type == "camera") {
+                runCameraCalibration_FromImages(imgDir, saveXml);
+            }
+        }
+        //离线双目联合标定
+        else {
+            if (model_type == "fisheye") {
+                runStereoFisheyeCalib_FromImages(imgDir, saveXml);
+            }
+        }
+    }
     FisheyeUndist undist;
     if (!undist.init(saveXml))
     {
@@ -625,15 +655,15 @@ int static runChessBoardDetectDemo(const TagDetectParams& params) {
             if (!frameFix.empty())
             {
                 lastBoardRes = tagDet->detect(frameFix);
-                tagDet->drawBoardResult(frameFix, lastBoardRes);
+                //tagDet->drawBoardResult(frameFix, lastBoardRes);
                 // 打印相机光心在世界坐标系中的坐标
                 if (lastBoardRes.board_pose_valid)
                 {
-                    double cx = lastBoardRes.camera_tvec[0];
-                    double cy = lastBoardRes.camera_tvec[1];
-                    double cz = lastBoardRes.camera_tvec[2];
+                    double cx = lastBoardRes.board_tvec[0];
+                    double cy = lastBoardRes.board_tvec[1];
+                    double cz = lastBoardRes.board_tvec[2];
                     /*std::cout << std::fixed << std::setprecision(5);
-                    std::cout << "相机光心在board阵列坐标系的坐标(m) X: " << cx
+                    std::cout << "board标定板相机坐标系中的坐标(m) X: " << cx
                         << "  Y: " << cy << "  Z: " << cz << std::endl;
                     auto end = steady_clock::now();
                     double cost_time = duration_cast<milliseconds>(end - start).count();
@@ -660,6 +690,7 @@ int static runChessBoardDetectDemo(const TagDetectParams& params) {
                         cv::resize(frame, showFrame, cv::Size(), 1.0 / 8.0, 1.0 / 8.0, cv::INTER_LINEAR);
                         cv::imshow("current_frame", showFrame);
                         cv::waitKey(1);
+                        std::cout << std::fixed << std::setprecision(5);
                         std::cout << "\n===== 连续10帧位姿统计结果 =====\n";
                         std::cout << "平均坐标(mm) X: " << meanX << " Y: " << meanY << " Z: " << meanZ << "\n";
                         std::cout << "三轴均方差(mm) X: " << varX << " Y: " << varY << " Z: " << varZ << "\n\n";
@@ -727,8 +758,9 @@ int main()
     SetConsoleOutputCP(65001); // 控制台切换UTF8(65001),中文不乱码
 #endif
     int ret = -1;
-    std::string visionDir = "HIKVision";
-    //ret = runUndistortDemo(visionDir);
+    std::string visionDir = "RGBVison";
+    std::string model_type = "fisheye";
+    ret = runUndistortDemo(visionDir, model_type, false, false);
     
     //调用独立录制函数：摄像头录制视频
     /*const std::string videoFile = "../mp4/record_aruco_tag.mp4";
@@ -738,7 +770,7 @@ int main()
         std::cout << "视频录制流程异常，退出" << std::endl;
         return -1;
     }*/
-    TagDetectParams params;
+    /*TagDetectParams params;
     params.rows = 8;
     params.cols = 11;
     params.tagSize = 0.01;
@@ -746,7 +778,7 @@ int main()
     params.tagDistY = 0.01;
     params.tagType = TagType::CHESS_BOARD;
     std::cout<<"rows="<<params.rows<<" cols="<<params.cols<<std::endl;
-    ret = runChessBoardDetectDemo(params);
+    ret = runChessBoardDetectDemo(params);*/
     //ret = runTagDetectRealTime(params);
     //ret = runTagDetectDemo(params);
     //ret = runCalculateCameraPose();
